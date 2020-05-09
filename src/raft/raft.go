@@ -73,16 +73,20 @@ type Raft struct {
 	lastLogTerm int
 
 	state State
+	// Number of votes get.
+	numVotes int
 
-  // Only sends to this channel when getting vote, value is the term.
-  voteCh chan int
+	// sends to it when it becomes leader (gets majority of votes)
+	becomeLeaderch chan bool
+	// sends to it when it becomes follower
 	becomeFollowerCh chan bool
+	// stay in follower, ideally could be merged with the channel above
+	stayAsFollowerCh chan bool
 }
 
 // return currentTerm and whether this server
 // believes it is the leader.
 func (rf *Raft) GetState() (int, bool) {
-
 	var term int
 	var isleader bool
 	// Your code here (2A).
@@ -168,6 +172,7 @@ func (rf *Raft) RequestVote(args *RequestVoteArgs, reply *RequestVoteReply) {
 	// For 2A
 	rf.mu.Lock()
 	defer rf.mu.Unlock()
+	reply.Term = rf.currentTerm
 	if args.Term < rf.currentTerm {
 		reply.VoteGranted = false
 		return
@@ -176,7 +181,6 @@ func (rf *Raft) RequestVote(args *RequestVoteArgs, reply *RequestVoteReply) {
 	// TODO: check if the candidate log is newer than me.
 	if votedForOk {
 		reply.VoteGranted = true
-		reply.Term = rf.currentTerm
 	} else {
 		reply.VoteGranted = false
 	}
@@ -231,8 +235,19 @@ type AppendEntriesReply struct {
 
 func (rf *Raft) AppendEntries(args *AppendEntriesArgs, reply *AppendEntriesReply) {
 	// For 2A
-	rf.appendEntriesCh <- args.Term
+	rf.mu.Lock()
+	defer rf.mu.Unlock()
+	// Discover higer terms. Switch to follower state from leader or candidate.
+	if (args.Term >= rf.currentTerm && rf.state != Follower) {
+		rf.state = Follower
+		rf.becomeFollowerCh <- true
+	}
+	if (args.Term >= rf.currentTerm && rf.state == Follower) {
+		rf.stayAsFollowerCh <- true
+	}
 	// TODO what's the response
+  // This is for leader to update itself if currentTerm is larger than Term.
+	reply.Term = rf.currentTerm
 	return
 
 }
@@ -295,75 +310,124 @@ func (rf *Raft) FollowerState() {
     for {
     	// TODO determine
     	timeout := 1
-		timer := time.NewTimer(timeout * time.Second)
-		select {
-			case <-timer.C:
-				// Time out
-				rf.mu.Lock()
-				rf.state = Candidate
-				rf.mu.Unlock()
-				return
-			// TODO: add granting vote to candidate case
-			case <-rf.appendEntriesCh:
-				// Got heartbeat
+			timer := time.NewTimer(timeout * time.Second)
+			select {
+				case <-timer.C:
+					// Time out
+					rf.mu.Lock()
+					rf.state = Candidate
+					rf.mu.Unlock()
+					return
+					// TODO: add granting vote to candidate case
+				case <-rf.stayAsFollowerCh:
+					// Continue
 		}
 	}
 }
 
-func (rf *Raft) requestVote() {
+// Sends RequestVote and processes the response.
+func (rf *Raft) requestVote(server int, args *RequestVoteArgs) {
+		reply := &RequestVoteReply{}
+		if rf.sendRequestVote(server, args, reply) {
+				// Check term to see if the request is initiated in the same term.
+				rf.mu.Lock()
+				defer rf.mu.Unlock()
+				// TODO: will this term be updated to a larger value if the receiver
+				// has a higer term?
+				// We only care about the result when it's still candidate
+				if (rf.state = Candidate) {
+					if (reply.VoteGranted && reply.Term == rf.currentTerm) {
+						numVotes++
+						// Gets the majority of votes.
+						if (numVotes > len(rf.peers) / 2) {
+							rf.state = Leader
+							rf.becomeLeaderCh <- true
+						}
+					}
+				}
+		}
+}
 
+func (rf *Raft) startRequestVote() {
+	rf.mu.Lock()
+	defer rf.mu.Unlock()
+	// Updates related states before initiating votes
+	rf.currentTerm++
+	numVotes = 0
+	for i := 0; i < len(rf.peers); ++i {
+		if i == me {
+			numVotes++
+		} else {
+			// Send request vote RPC
+			args := &RequestVoteArgs {
+				Term: rf.currentTerm,
+				CandidateId: rf.me,
+			}
+			go requestVote(i, args)
+		}
+	}
 }
 
 func (rf *Raft) CandidateState() {
 	for {
-		rf.requestVote()
+		rf.startRequestVote()
 		// TODO determine timeout
 		timeout := 1
 		timer := time.NewTimer(timeout * time.Second)
-    becomeLeaderCh := make chan(bool)
 		select {
-		// receive majorirty -> become leader
-		case <- becomeLeaderCh:
-			rf.mu.Lock()
-			defer rf.mu.Lock()
-			rf.State = Leader
+		// Signal to become leader
+		case <- rf.becomeLeaderCh:
 			return
 		// time out, start new round
 		case <- timer.C:
-		// It becomes follower
+		// It becomes follower (Logic in AppendEntries handler)
 		case <- rf.becomeFollowerCh:
 			return
 		}
+	}
+}
 
+func (rf *Raft) sendHeartBeat(server int, args *AppendEntriesArgs) {
+	reply := &AppendEntriesReply{}
+	if rf.sendAppendEntries(server, args, reply) {
+		// If leader sees a higer term, switch to follower
+		rf.mu.Lock()
+		defer rf.mu.Unlock()
+		if (reply.Term > rf.currentTerm) {
+			// TODO: shall we update currentTerm to Term?
+			// sendHeartBeat is sent from leader state. But when receiving the response,
+			// it may not be in leader state any more.
+			if (rf.state != Follower) {
+				rf.state = Follower
+				rf.becomeFollowerCh <- true
+			}
+		}
+	}
+}
+
+func (rf *Raft) startHeartBeat() {
+	for i := 0; i < len(rf.peers); ++i {
+		if i != me {
+			args := &AppendEntriesArgs {
+				Term: rf.currentTerm,
+				LeaderId: rf.me,
+			}
+			go sendHeartBeat(i, args)
+		}
 	}
 
 }
 
 func (rf *Raft) LeaderState() {
-	// send heartbeat periodically
-	// <- channel: if got higher term, change to follower // should this be done in handler??
 	for {
-		rf.sendHeartBeat()
+		rf.startHeartBeat()
 		// TODO determine
 		timeout := 1
 		timer := time.NewTimer(timeout * time.Second)
 		select {
 			case <- timer.C:
 				// Continue, will send next heartbeat
-			case term: <- rf.appendEntriesCh:
-				// Check term, if it sees new term, become follower
-				rf.mu.Lock()
-				defer rf.mu.Lock()
-				if term > rf.currentTerm:
-					rf.state = Follower
-					return
-			case term: <- rf.requestVoteCh:
-				// Check term, if it sees new term, become follower.
-				// TODO: unify with the code above
-				rf.mu.Lock()
-				defer rf.mu.Lock()
-				if term > rf.currentTerm:
-				rf.state = Follower
+			case term: <- rf.becomeFollowerCh:
 				return
 		}
 	}
