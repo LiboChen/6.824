@@ -78,10 +78,8 @@ type Raft struct {
 
 	// sends to it when it becomes leader (gets majority of votes)
 	becomeLeaderch chan bool
-	// sends to it when it becomes follower
+	// sends to it when it becomes follower or stay in follower
 	becomeFollowerCh chan bool
-	// stay in follower, ideally could be merged with the channel above
-	stayAsFollowerCh chan bool
 }
 
 // return currentTerm and whether this server
@@ -165,7 +163,7 @@ type RequestVoteReply struct {
 
 //
 // example RequestVote RPC handler.
-//
+// TODO: change candidate to follower
 func (rf *Raft) RequestVote(args *RequestVoteArgs, reply *RequestVoteReply) {
 	// Your code here (2A, 2B).
 
@@ -173,16 +171,26 @@ func (rf *Raft) RequestVote(args *RequestVoteArgs, reply *RequestVoteReply) {
 	rf.mu.Lock()
 	defer rf.mu.Unlock()
 	reply.Term = rf.currentTerm
+
 	if args.Term < rf.currentTerm {
+		// No vote
 		reply.VoteGranted = false
-		return
-	}
-	votedForOk := rf.votedFor == -1 || rf.votedFor == args.CandidateId
-	// TODO: check if the candidate log is newer than me.
-	if votedForOk {
-		reply.VoteGranted = true
 	} else {
-		reply.VoteGranted = false
+		canVote := rf.votedFor == -1 || rf.votedFor == args.CandidateId
+		// TODO: check if the candidate log is newer than me.
+		if canVote {
+			reply.VoteGranted = true
+			rf.votedFor = args.CandidateId
+		} else {
+			reply.VoteGranted = false
+		}
+
+		// Convert to follower
+		if (args.Term > rf.currentTerm) {
+			rf.currentTerm = args.term
+			rf.state = Follower
+			rf.becomeFollower <- true
+		}
 	}
 	return
 }
@@ -238,12 +246,13 @@ func (rf *Raft) AppendEntries(args *AppendEntriesArgs, reply *AppendEntriesReply
 	rf.mu.Lock()
 	defer rf.mu.Unlock()
 	// Discover higer terms. Switch to follower state from leader or candidate.
+	// For leader, shall we use > instead of >=
 	if (args.Term >= rf.currentTerm && rf.state != Follower) {
 		rf.state = Follower
 		rf.becomeFollowerCh <- true
 	}
 	if (args.Term >= rf.currentTerm && rf.state == Follower) {
-		rf.stayAsFollowerCh <- true
+		rf.becomeFollowerCh <- true	// stay in follower state
 	}
 	// TODO what's the response
   // This is for leader to update itself if currentTerm is larger than Term.
@@ -332,9 +341,16 @@ func (rf *Raft) requestVote(server int, args *RequestVoteArgs) {
 				// Check term to see if the request is initiated in the same term.
 				rf.mu.Lock()
 				defer rf.mu.Unlock()
-				// TODO: will this term be updated to a larger value if the receiver
-				// has a higer term?
-				// We only care about the result when it's still candidate
+
+				// Switch to follower if seeing a higer term
+				if (reply.Term > rf.currentTerm) {
+					rf.currentTerm = reply.Term
+					rf.state = Follower
+					rf.becomeFollower <- true
+					return
+				}
+
+				// We only care about the voting result when it's still candidate
 				if (rf.state = Candidate) {
 					if (reply.VoteGranted && reply.Term == rf.currentTerm) {
 						numVotes++
