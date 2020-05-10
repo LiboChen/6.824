@@ -26,7 +26,6 @@ import "../labrpc"
 // import "bytes"
 // import "../labgob"
 
-
 //
 // as each Raft peer becomes aware that successive log entries are
 // committed, the peer should send an ApplyMsg to the service (or
@@ -49,13 +48,13 @@ type State int
 
 const (
 	Follower State = iota
-  Candidate
+	Candidate
 	Leader
 )
 
 func generateRand(min, max int) int {
 	rand.Seed(time.Now().UnixNano())
-	return rand.Intn(max - min + 1) + min
+	return rand.Intn(max-min+1) + min
 }
 
 //
@@ -73,10 +72,10 @@ type Raft struct {
 	// state a Raft server must maintain.
 
 	// Written in 2A
-	currentTerm int
-	votedFor int
+	currentTerm  int
+	votedFor     int
 	lastLogIndex int
-	lastLogTerm int
+	lastLogTerm  int
 
 	state State
 	// Number of votes get.
@@ -119,7 +118,6 @@ func (rf *Raft) persist() {
 	// rf.persister.SaveRaftState(data)
 }
 
-
 //
 // restore previously persisted state.
 //
@@ -142,9 +140,6 @@ func (rf *Raft) readPersist(data []byte) {
 	// }
 }
 
-
-
-
 //
 // example RequestVote RPC arguments structure.
 // field names must start with capital letters!
@@ -153,10 +148,10 @@ type RequestVoteArgs struct {
 	// Your data here (2A, 2B).
 
 	// For 2A
-	Term int
-	CandidateId int
+	Term         int
+	CandidateId  int
 	LastLogIndex int
-	LastLogTerm int
+	LastLogTerm  int
 }
 
 //
@@ -165,7 +160,7 @@ type RequestVoteArgs struct {
 //
 type RequestVoteReply struct {
 	// Your data here (2A).
-	Term int
+	Term        int
 	VoteGranted bool
 }
 
@@ -192,11 +187,13 @@ func (rf *Raft) RequestVote(args *RequestVoteArgs, reply *RequestVoteReply) {
 		}
 
 		// Convert to follower
-		if (args.Term > rf.currentTerm) {
+		if args.Term > rf.currentTerm {
 			rf.currentTerm = args.Term
 			rf.votedFor = -1
 			rf.state = Follower
+			DPrintf("server %v starts to send to channel in RequestVote", rf.me)
 			rf.becomeFollowerCh <- true
+			DPrintf("server %v finishes sending to channel in RequestVote", rf.me)
 		}
 	}
 	return
@@ -238,14 +235,13 @@ func (rf *Raft) sendRequestVote(server int, args *RequestVoteArgs, reply *Reques
 
 type AppendEntriesArgs struct {
 	// For 2A
-	Term int
-  LeaderId int
+	Term     int
+	LeaderId int
 }
 
 type AppendEntriesReply struct {
 	// For 2A
 	Term int
-
 }
 
 func (rf *Raft) AppendEntries(args *AppendEntriesArgs, reply *AppendEntriesReply) {
@@ -256,20 +252,30 @@ func (rf *Raft) AppendEntries(args *AppendEntriesArgs, reply *AppendEntriesReply
 	// For leader, shall we use > instead of >=
 
 	// A universal rule for all RPC reqs and resp
-  if (args.Term > rf.currentTerm) {
+	if args.Term > rf.currentTerm {
 		rf.currentTerm = args.Term
 		rf.votedFor = -1
 	}
 
-	if (args.Term >= rf.currentTerm && rf.state != Follower) {
+	if args.Term >= rf.currentTerm && rf.state != Follower {
+		DPrintf("%v starts to write to follower channel==========, pre state: %v", rf.me, rf.state)
 		rf.state = Follower
 		rf.becomeFollowerCh <- true
+		DPrintf("%v finishes write to follwer channel ================", rf.me)
+	} else if args.Term >= rf.currentTerm && rf.state == Follower {
+		DPrintf("%v starts to write &&&&&&&&&&&&&&&", rf.me)
+		rf.becomeFollowerCh <- true // stay in follower state
+		DPrintf("%v finishes write &&&&&&&&&&&&&&&&", rf.me)
 	}
-	if (args.Term >= rf.currentTerm && rf.state == Follower) {
-		rf.becomeFollowerCh <- true	// stay in follower state
-	}
+	// The code below leads to a deadline
+	/*
+		if (args.Term >= rf.currentTerm && rf.state == Follower) {
+	        DPrintf("%v starts to write &&&&&&&&&&&&&&&", rf.me)
+			rf.becomeFollowerCh <- true	// stay in follower state
+	        DPrintf("%v finishes write &&&&&&&&&&&&&&&&", rf.me)
+		}*/
 	// TODO what's the response
-  // This is for leader to update itself if currentTerm is larger than Term.
+	// This is for leader to update itself if currentTerm is larger than Term.
 	reply.Term = rf.currentTerm
 	return
 
@@ -279,7 +285,6 @@ func (rf *Raft) sendAppendEntries(server int, args *AppendEntriesArgs, reply *Ap
 	ok := rf.peers[server].Call("Raft.AppendEntries", args, reply)
 	return ok
 }
-
 
 //
 // the service using Raft (e.g. a k/v server) wants to start
@@ -301,7 +306,6 @@ func (rf *Raft) Start(command interface{}) (int, int, bool) {
 	isLeader := true
 
 	// Your code here (2B).
-
 
 	return index, term, isLeader
 }
@@ -331,62 +335,66 @@ func (rf *Raft) killed() bool {
 func (rf *Raft) FollowerState() {
 	// If election timeout elapses without receiving AppendEntries
 	// RPC from current leader or granting vote to candidate: convert to candidate
-    for {
-			DPrintf("%v: in follower state", rf.me)
-    	// TODO: tune
-			// Use 400 - 500 ms
-    	timeout := generateRand(400, 500)
-			timer := time.NewTimer(time.Duration(timeout) * time.Millisecond)
-			select {
-				case <-timer.C:
-					// Time out
-					rf.mu.Lock()
-					defer rf.mu.Unlock()
-					if (rf.votedFor == -1) {
-						rf.state = Candidate
-						return
-					}
-					// TODO: add granting vote to candidate case
-				case <-rf.becomeFollowerCh:
-					// Continue
+	for {
+		DPrintf("%v: in follower state", rf.me)
+		// TODO: tune
+		// Use 400 - 500 ms
+		timeout := generateRand(400, 500)
+		timer := time.NewTimer(time.Duration(timeout) * time.Millisecond)
+		select {
+		case <-timer.C:
+			// Time out
+			rf.mu.Lock()
+			defer rf.mu.Unlock()
+			if rf.votedFor == -1 {
+				rf.state = Candidate
+				return
+			}
+			// TODO: add granting vote to candidate case
+		case <-rf.becomeFollowerCh:
+			// Continue
 		}
 	}
 }
 
 // Sends RequestVote and processes the response.
 func (rf *Raft) requestVote(server int, args *RequestVoteArgs) {
-		reply := &RequestVoteReply{}
-		if rf.sendRequestVote(server, args, reply) {
-				// Check term to see if the request is initiated in the same term.
-				rf.mu.Lock()
-				defer rf.mu.Unlock()
-				if args.Term != rf.currentTerm {
-					// We are in a different term now, the reply is useless
-					return
-				}
-
-				// Switch to follower if seeing a higer term
-				if (reply.Term > rf.currentTerm) {
-					rf.currentTerm = reply.Term
-					rf.votedFor = -1 // reset votedFor in a new term
-					rf.state = Follower
-					rf.becomeFollowerCh <- true
-					return
-				}
-
-				// We only care about the voting result when it's still candidate
-				if (rf.state == Candidate) {
-					if (reply.VoteGranted) {
-						rf.numVotes++
-						DPrintf("%v adds vote to %v", rf.me, rf.numVotes)
-						// Gets the majority of votes.
-						if (rf.numVotes > len(rf.peers) / 2) {
-							rf.state = Leader
-							rf.becomeLeaderCh <- true
-						}
-					}
-				}
+	reply := &RequestVoteReply{}
+	if rf.sendRequestVote(server, args, reply) {
+		// Check term to see if the request is initiated in the same term.
+		rf.mu.Lock()
+		defer rf.mu.Unlock()
+		if args.Term != rf.currentTerm {
+			// We are in a different term now, the reply is useless
+			return
 		}
+
+		// Switch to follower if seeing a higer term
+		if reply.Term > rf.currentTerm {
+			rf.currentTerm = reply.Term
+			rf.votedFor = -1 // reset votedFor in a new term
+			rf.state = Follower
+			DPrintf("%v writes to follower channel ^^^^^^^^^^^^^^^^^", rf.me)
+			rf.becomeFollowerCh <- true
+			DPrintf("%v finishes writing follower channel ^^^^^^^^^^^^^^^^^", rf.me)
+			return
+		}
+
+		// We only care about the voting result when it's still candidate
+		if rf.state == Candidate {
+			if reply.VoteGranted {
+				rf.numVotes++
+				DPrintf("%v adds vote to %v", rf.me, rf.numVotes)
+				// Gets the majority of votes.
+				if rf.numVotes > len(rf.peers)/2 {
+					rf.state = Leader
+					DPrintf("%v writes to leader channel ^^^^^^^^^^^^^^^^^", rf.me)
+					rf.becomeLeaderCh <- true
+					DPrintf("%v finishes writing leader channel ^^^^^^^^^^^^^^^^^", rf.me)
+				}
+			}
+		}
+	}
 }
 
 func (rf *Raft) startRequestVote() {
@@ -404,8 +412,8 @@ func (rf *Raft) startRequestVote() {
 			rf.votedFor = rf.me
 		} else {
 			// Send request vote RPC
-			args := &RequestVoteArgs {
-				Term: rf.currentTerm,
+			args := &RequestVoteArgs{
+				Term:        rf.currentTerm,
 				CandidateId: rf.me,
 			}
 			go rf.requestVote(i, args)
@@ -422,12 +430,12 @@ func (rf *Raft) CandidateState() {
 		timer := time.NewTimer(time.Duration(timeout) * time.Millisecond)
 		select {
 		// Signal to become leader
-		case <- rf.becomeLeaderCh:
+		case <-rf.becomeLeaderCh:
 			return
 		// time out, start new round
-		case <- timer.C:
+		case <-timer.C:
 		// It becomes follower (Logic in AppendEntries handler)
-		case <- rf.becomeFollowerCh:
+		case <-rf.becomeFollowerCh:
 			return
 		}
 	}
@@ -439,13 +447,15 @@ func (rf *Raft) sendHeartBeat(server int, args *AppendEntriesArgs) {
 		// If leader sees a higer term, switch to follower
 		rf.mu.Lock()
 		defer rf.mu.Unlock()
-		if (reply.Term > rf.currentTerm) {
+		if reply.Term > rf.currentTerm {
 			// TODO: shall we update currentTerm to Term?
 			// sendHeartBeat is sent from leader state. But when receiving the response,
 			// it may not be in leader state any more.
-			if (rf.state != Follower) {
+			if rf.state != Follower {
 				rf.state = Follower
+				DPrintf("server %v starts to write to follower channel, ", rf.me)
 				rf.becomeFollowerCh <- true
+				DPrintf("server %v finishes write to follower channel, ", rf.me)
 			}
 			// A universal rule
 			rf.currentTerm = reply.Term
@@ -455,10 +465,12 @@ func (rf *Raft) sendHeartBeat(server int, args *AppendEntriesArgs) {
 }
 
 func (rf *Raft) startHeartBeat() {
+	rf.mu.Lock()
+	defer rf.mu.Unlock()
 	for i := 0; i < len(rf.peers); i++ {
 		if i != rf.me {
-			args := &AppendEntriesArgs {
-				Term: rf.currentTerm,
+			args := &AppendEntriesArgs{
+				Term:     rf.currentTerm,
 				LeaderId: rf.me,
 			}
 			go rf.sendHeartBeat(i, args)
@@ -474,10 +486,10 @@ func (rf *Raft) LeaderState() {
 		timeout := 150
 		timer := time.NewTimer(time.Duration(timeout) * time.Millisecond)
 		select {
-			case <- timer.C:
-				// Continue, will send next heartbeat
-			case <- rf.becomeFollowerCh:
-				return
+		case <-timer.C:
+			// Continue, will send next heartbeat
+		case <-rf.becomeFollowerCh:
+			return
 		}
 	}
 }
@@ -499,7 +511,6 @@ func (rf *Raft) Run() {
 		}
 	}
 }
-
 
 //
 // the service or tester wants to create a Raft server. the ports
@@ -526,7 +537,7 @@ func Make(peers []*labrpc.ClientEnd, me int,
 	rf.votedFor = -1
 
 	rf.state = Follower
-  rf.becomeLeaderCh = make(chan bool)
+	rf.becomeLeaderCh = make(chan bool)
 	rf.becomeFollowerCh = make(chan bool)
 
 	// initialize from state persisted before a crash
