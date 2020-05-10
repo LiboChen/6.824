@@ -94,10 +94,12 @@ func (rf *Raft) GetState() (int, bool) {
 	var term int
 	var isleader bool
 	// Your code here (2A).
+	DPrintf("GetState starts")
 	rf.mu.Lock()
 	term = rf.currentTerm
 	isleader = rf.state == Leader
 	rf.mu.Unlock()
+	DPrintf("GetState finishes")
 	return term, isleader
 }
 
@@ -192,6 +194,7 @@ func (rf *Raft) RequestVote(args *RequestVoteArgs, reply *RequestVoteReply) {
 		// Convert to follower
 		if (args.Term > rf.currentTerm) {
 			rf.currentTerm = args.Term
+			rf.votedFor = -1
 			rf.state = Follower
 			rf.becomeFollowerCh <- true
 		}
@@ -251,6 +254,13 @@ func (rf *Raft) AppendEntries(args *AppendEntriesArgs, reply *AppendEntriesReply
 	defer rf.mu.Unlock()
 	// Discover higer terms. Switch to follower state from leader or candidate.
 	// For leader, shall we use > instead of >=
+
+	// A universal rule for all RPC reqs and resp
+  if (args.Term > rf.currentTerm) {
+		rf.currentTerm = args.Term
+		rf.votedFor = -1
+	}
+
 	if (args.Term >= rf.currentTerm && rf.state != Follower) {
 		rf.state = Follower
 		rf.becomeFollowerCh <- true
@@ -322,6 +332,7 @@ func (rf *Raft) FollowerState() {
 	// If election timeout elapses without receiving AppendEntries
 	// RPC from current leader or granting vote to candidate: convert to candidate
     for {
+			DPrintf("%v: in follower state", rf.me)
     	// TODO: tune
 			// Use 400 - 500 ms
     	timeout := generateRand(400, 500)
@@ -349,10 +360,15 @@ func (rf *Raft) requestVote(server int, args *RequestVoteArgs) {
 				// Check term to see if the request is initiated in the same term.
 				rf.mu.Lock()
 				defer rf.mu.Unlock()
+				if args.Term != rf.currentTerm {
+					// We are in a different term now, the reply is useless
+					return
+				}
 
 				// Switch to follower if seeing a higer term
 				if (reply.Term > rf.currentTerm) {
 					rf.currentTerm = reply.Term
+					rf.votedFor = -1 // reset votedFor in a new term
 					rf.state = Follower
 					rf.becomeFollowerCh <- true
 					return
@@ -360,8 +376,9 @@ func (rf *Raft) requestVote(server int, args *RequestVoteArgs) {
 
 				// We only care about the voting result when it's still candidate
 				if (rf.state == Candidate) {
-					if (reply.VoteGranted && reply.Term == rf.currentTerm) {
+					if (reply.VoteGranted) {
 						rf.numVotes++
+						DPrintf("%v adds vote to %v", rf.me, rf.numVotes)
 						// Gets the majority of votes.
 						if (rf.numVotes > len(rf.peers) / 2) {
 							rf.state = Leader
@@ -375,8 +392,10 @@ func (rf *Raft) requestVote(server int, args *RequestVoteArgs) {
 func (rf *Raft) startRequestVote() {
 	rf.mu.Lock()
 	defer rf.mu.Unlock()
+	DPrintf("%v starts to request vote", rf.me)
 	// Updates related states before initiating votes
 	rf.currentTerm++
+	rf.votedFor = -1
 	rf.numVotes = 0
 	for i := 0; i < len(rf.peers); i++ {
 		if i == rf.me {
@@ -396,6 +415,7 @@ func (rf *Raft) startRequestVote() {
 
 func (rf *Raft) CandidateState() {
 	for {
+		DPrintf("%v: in candidate state", rf.me)
 		rf.startRequestVote()
 		// TODO: tune timeout
 		timeout := generateRand(400, 500)
@@ -427,6 +447,9 @@ func (rf *Raft) sendHeartBeat(server int, args *AppendEntriesArgs) {
 				rf.state = Follower
 				rf.becomeFollowerCh <- true
 			}
+			// A universal rule
+			rf.currentTerm = reply.Term
+			rf.votedFor = -1
 		}
 	}
 }
@@ -445,9 +468,10 @@ func (rf *Raft) startHeartBeat() {
 
 func (rf *Raft) LeaderState() {
 	for {
+		DPrintf("%v: in leader state", rf.me)
 		rf.startHeartBeat()
 		// TODO: tune
-		timeout := 200
+		timeout := 150
 		timer := time.NewTimer(time.Duration(timeout) * time.Millisecond)
 		select {
 			case <- timer.C:

@@ -1,0 +1,4 @@
+Test (2A): election after network failure ...
+  ... Passed --   5.0  3   96    8180    0
+PASS
+ok  	_/Users/libochen/6.824/src/raft	4.992s
