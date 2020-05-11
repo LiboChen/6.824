@@ -301,24 +301,24 @@ func (cfg *config) setlongreordering(longrel bool) {
 // try a few times in case re-elections are needed.
 func (cfg *config) checkOneLeader() int {
 	for iters := 0; iters < 10; iters++ {
-		DPrintf("checkOneLeader iter: %v", iters)
+		// DPrintf("checkOneLeader iter: %v", iters)
 		ms := 450 + (rand.Int63() % 100)
 		time.Sleep(time.Duration(ms) * time.Millisecond)
 
 		leaders := make(map[int][]int)
 		for i := 0; i < cfg.n; i++ {
-			DPrintf("libo: a")
+			// DPrintf("libo: a")
 			if cfg.connected[i] {
 				if term, leader := cfg.rafts[i].GetState(); leader {
 					leaders[term] = append(leaders[term], i)
 				}
 			}
-			DPrintf("libo: b")
+			// DPrintf("libo: b")
 		}
 
 		lastTermWithLeader := -1
 		for term, leaders := range leaders {
-			DPrintf("libo: c")
+			// DPrintf("libo: c")
 			if len(leaders) > 1 {
 				cfg.t.Fatalf("term %d has %d (>1) leaders", term, len(leaders))
 			}

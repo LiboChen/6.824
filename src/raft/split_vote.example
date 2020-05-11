@@ -1,0 +1,95 @@
+1(term 7): starts to request vote
+2020/05/10 20:58:28 0(term 8): starts to request vote
+2020/05/10 20:58:28 no leaders found
+2020/05/10 20:58:28 1(term 8): starts to request vote
+2020/05/10 20:58:28 0 in RequestVote Handler, original term: 8, args term: 8, result: NOVOTE: voted
+2020/05/10 20:58:28 1(term 8) got vote resp(term: 8, granted false), args(term: 8)
+
+2020/05/10 20:58:28 0(term 9): starts to request vote
+2020/05/10 20:58:28 1(term 8) becomes follower, higher term 9 from RequestVote
+2020/05/10 20:58:28 1 in RequestVote Handler, original term: 8, args term: 9, result: NOVOTE: voted
+2020/05/10 20:58:28 0(term 9) got vote resp(term: 8, granted false), args(term: 9)
+
+// 1(term 10) -> 0(term 9) rquest vote
+2020/05/10 20:58:28 1: went into follower state function with timeout 336ms
+2020/05/10 20:58:29 1(term 10): starts to request vote
+2020/05/10 20:58:29 0(term 9) becomes follower, higher term 10 from RequestVote
+2020/05/10 20:58:29 0 in RequestVote Handler, original term: 9, args term: 10, result: NOVOTE: voted
+2020/05/10 20:58:29 1(term 10) got vote resp(term: 9, granted false), args(term: 10)
+2020/05/10 20:58:29 0: went into follower state function with timeout 248ms
+
+// 0(term 11) -> 1(term 10) request vote
+2020/05/10 20:58:29 0(term 11): starts to request vote
+2020/05/10 20:58:29 1(term 10) becomes follower, higher term 11 from RequestVote
+2020/05/10 20:58:29 1 in RequestVote Handler, original term: 10, args term: 11, result: NOVOTE: voted
+2020/05/10 20:58:29 0(term 11) got vote resp(term: 10, granted false), args(term: 11)
+2020/05/10 20:58:29 1: went into follower state function with timeout 311ms
+
+// 1(term 12) -> 0(term 11) request vote
+2020/05/10 20:58:29 1(term 12): starts to request vote
+2020/05/10 20:58:29 0(term 11) becomes follower, higher term 12 from RequestVote
+2020/05/10 20:58:29 0 in RequestVote Handler, original term: 11, args term: 12, result: NOVOTE: voted
+2020/05/10 20:58:29 1(term 12) got vote resp(term: 11, granted false), args(term: 12)
+2020/05/10 20:58:29 0: went into follower state function with timeout 337ms
+
+
+2020/05/10 20:58:30 0(term 13): starts to request vote
+2020/05/10 20:58:30 1(term 12) becomes follower, higher term 13 from RequestVote
+2020/05/10 20:58:30 1 in RequestVote Handler, original term: 12, args term: 13, result: NOVOTE: voted
+2020/05/10 20:58:30 0(term 13) got vote resp(term: 12, granted false), args(term: 13)
+2020/05/10 20:58:30 1: went into follower state function with timeout 274ms
+2020/05/10 20:58:30 1(term 14): starts to request vote
+2020/05/10 20:58:30 0(term 13) becomes follower, higher term 14 from RequestVote
+2020/05/10 20:58:30 0 in RequestVote Handler, original term: 13, args term: 14, result: NOVOTE: voted
+2020/05/10 20:58:30 1(term 14) got vote resp(term: 13, granted false), args(term: 14)
+2020/05/10 20:58:30 0: went into follower state function with timeout 355ms
+2020/05/10 20:58:30 0(term 15): starts to request vote
+2020/05/10 20:58:30 1(term 14) becomes follower, higher term 15 from RequestVote
+2020/05/10 20:58:30 1 in RequestVote Handler, original term: 14, args term: 15, result: NOVOTE: voted
+2020/05/10 20:58:30 0(term 15) got vote resp(term: 14, granted false), args(term: 15)
+2020/05/10 20:58:30 1: went into follower state function with timeout 175ms
+2020/05/10 20:58:30 1(term 16): starts to request vote
+2020/05/10 20:58:30 0(term 15) becomes follower, higher term 16 from RequestVote
+2020/05/10 20:58:30 0 in RequestVote Handler, original term: 15, args term: 16, result: NOVOTE: voted
+2020/05/10 20:58:30 1(term 16) got vote resp(term: 15, granted false), args(term: 16)
+2020/05/10 20:58:30 0: went into follower state function with timeout 371ms
+2020/05/10 20:58:31 0(term 17): starts to request vote
+2020/05/10 20:58:31 1(term 16) becomes follower, higher term 17 from RequestVote
+2020/05/10 20:58:31 1 in RequestVote Handler, original term: 16, args term: 17, result: NOVOTE: voted
+2020/05/10 20:58:31 0(term 17) got vote resp(term: 16, granted false), args(term: 17)
+2020/05/10 20:58:31 1: went into follower state function with timeout 232ms
+2020/05/10 20:58:31 1(term 18): starts to request vote
+2020/05/10 20:58:31 0(term 17) becomes follower, higher term 18 from RequestVote
+2020/05/10 20:58:31 0 in RequestVote Handler, original term: 17, args term: 18, result: NOVOTE: voted
+2020/05/10 20:58:31 1(term 18) got vote resp(term: 17, granted false), args(term: 18)
+2020/05/10 20:58:31 0: went into follower state function with timeout 351ms
+2020/05/10 20:58:31 0(term 19): starts to request vote
+2020/05/10 20:58:31 1(term 18) becomes follower, higher term 19 from RequestVote
+2020/05/10 20:58:31 1 in RequestVote Handler, original term: 18, args term: 19, result: NOVOTE: voted
+2020/05/10 20:58:31 0(term 19) got vote resp(term: 18, granted false), args(term: 19)
+2020/05/10 20:58:31 1: went into follower state function with timeout 152ms
+2020/05/10 20:58:32 1(term 20): starts to request vote
+2020/05/10 20:58:32 0(term 19) becomes follower, higher term 20 from RequestVote
+2020/05/10 20:58:32 0 in RequestVote Handler, original term: 19, args term: 20, result: NOVOTE: voted
+2020/05/10 20:58:32 1(term 20) got vote resp(term: 19, granted false), args(term: 20)
+2020/05/10 20:58:32 0: went into follower state function with timeout 396ms
+2020/05/10 20:58:32 0(term 21): starts to request vote
+2020/05/10 20:58:32 1(term 20) becomes follower, higher term 21 from RequestVote
+2020/05/10 20:58:32 1 in RequestVote Handler, original term: 20, args term: 21, result: NOVOTE: voted
+2020/05/10 20:58:32 0(term 21) got vote resp(term: 20, granted false), args(term: 21)
+2020/05/10 20:58:32 1: went into follower state function with timeout 233ms
+2020/05/10 20:58:32 1(term 22): starts to request vote
+2020/05/10 20:58:32 0(term 21) becomes follower, higher term 22 from RequestVote
+2020/05/10 20:58:32 0 in RequestVote Handler, original term: 21, args term: 22, result: NOVOTE: voted
+2020/05/10 20:58:32 1(term 22) got vote resp(term: 21, granted false), args(term: 22)
+2020/05/10 20:58:32 0: went into follower state function with timeout 191ms
+2020/05/10 20:58:32 0(term 23): starts to request vote
+2020/05/10 20:58:32 1(term 22) becomes follower, higher term 23 from RequestVote
+2020/05/10 20:58:32 1 in RequestVote Handler, original term: 22, args term: 23, result: NOVOTE: voted
+2020/05/10 20:58:32 0(term 23) got vote resp(term: 22, granted false), args(term: 23)
+2020/05/10 20:58:32 1: went into follower state function with timeout 213ms
+2020/05/10 20:58:33 1(term 24): starts to request vote
+2020/05/10 20:58:33 0(term 23) becomes follower, higher term 24 from RequestVote
+2020/05/10 20:58:33 0 in RequestVote Handler, original term: 23, args term: 24, result: NOVOTE: voted
+2020/05/10 20:58:33 1(term 24) got vote resp(term: 23, granted false), args(term: 24)
+2020/05/10 20:58:33 0: went into follower state function with timeout 253ms
