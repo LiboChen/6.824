@@ -192,11 +192,10 @@ func (rf *Raft) RequestVote(args *RequestVoteArgs, reply *RequestVoteReply) {
 		// in split_vote.example.
 		DPrintf("%v(term %v) becomes follower, higher term %v from RequestVote",
 			rf.me, rf.currentTerm, args.Term)
-		rf.currentTerm = args.Term
-		rf.state = Follower
+		rf.updateToHigherTermAndConvertToFollower(args.Term)
 		rf.votedFor = args.CandidateId
 		reply.VoteGranted = true
-		result = "VOTE: higer term"
+		result = "VOTE: higher term"
 	}
 	DPrintf("%v in RequestVote Handler, original term: %v, args term: %v, result: %v",
 		rf.me, reply.Term, args.Term, result)
@@ -255,12 +254,8 @@ func (rf *Raft) requestVote(server int, args *RequestVoteArgs) {
 			return
 		}
 
-		// Switch to follower if seeing a higer term
 		if reply.Term > rf.currentTerm {
-			rf.currentTerm = reply.Term
-			rf.votedFor = -1 // reset votedFor in a new term
-			// DPrintf("%v becomes follower, higher term from RequestVote resp", rf.me)
-			rf.state = Follower
+			rf.updateToHigherTermAndConvertToFollower(reply.Term)
 			return
 		}
 
@@ -322,21 +317,16 @@ func (rf *Raft) AppendEntries(args *AppendEntriesArgs, reply *AppendEntriesReply
 	// 	rf.me, args.Term, rf.currentTerm)
 	rf.mu.Lock()
 	defer rf.mu.Unlock()
-	// Discover higer terms. Switch to follower state from leader or candidate.
-	// For leader, shall we use > instead of >=
 	// DPrintf("%v AppendEntries acquired lock, args.Term: %v, my term: %v",
 	//	rf.me, args.Term, rf.currentTerm)
-	// A universal rule for all RPC reqs and resp
-	if args.Term >= rf.currentTerm {
+	if args.Term == rf.currentTerm {
+		rf.state = Follower
+		// Reset the time so that the follower won't time out and become candidate.
+		rf.startFollowerTime = time.Now()
+	} else if args.Term > rf.currentTerm {
 		DPrintf("%v(term %v) becomes/stays follower, term %v from AppendEntries",
 			rf.me, rf.currentTerm, args.Term)
-		rf.currentTerm = args.Term
-		// we reply on this bit in follower state loop.
-		rf.votedFor = -1
-		rf.state = Follower
-		// We should update the follower time in case it's already in the follower
-		// state loop.
-		rf.startFollowerTime = time.Now()
+		rf.updateToHigherTermAndConvertToFollower(args.Term)
 	}
 
 	// This is for leader to update itself if currentTerm is larger than Term.
@@ -356,13 +346,8 @@ func (rf *Raft) sendHeartBeat(server int, args *AppendEntriesArgs) {
 		rf.mu.Lock()
 		defer rf.mu.Unlock()
 		if reply.Term > rf.currentTerm {
-			if rf.state != Follower {
-				DPrintf("%v becomes follower, higer term from AppendEntries resp", rf.me)
-				rf.state = Follower
-			}
-			// A universal rule
-			rf.currentTerm = reply.Term
-			rf.votedFor = -1
+			DPrintf("%v becomes follower, higher term from AppendEntries resp", rf.me)
+			rf.updateToHigherTermAndConvertToFollower(reply.Term)
 		}
 	}
 }
@@ -445,6 +430,20 @@ func (rf *Raft) setStartFollowerTime(t time.Time) {
 	rf.startFollowerTime = t
 }
 
+// This is a general rule for all the servers.
+//
+// When seeing a higher term from the any RPC request
+// or response, convert to Follower state, and updates to the higher term.
+//
+// REQUIRES: lock is already held.
+func (rf *Raft) updateToHigherTermAndConvertToFollower(higherTerm int) {
+	rf.currentTerm = higherTerm
+	rf.votedFor = -1
+	// We do not differentiate if the current state is Follower or not.
+	rf.state = Follower
+	rf.startFollowerTime = time.Now()
+}
+
 // ============================ State machines =================================
 
 func (rf *Raft) FollowerState() {
@@ -468,17 +467,18 @@ func (rf *Raft) FollowerState() {
 			//
 			// Instead explicitly unlock below.
 			//
-			// We reply on this value to see if it has granted vote to candidate.
-			if rf.votedFor == -1 {
-				// DPrintf("%v: in follower state, time out, become candidate", rf.me)
-				rf.state = Candidate
-				rf.mu.Unlock()
-				return
-			} else {
-				DPrintf("%v can not become leader, votedFor: %v, term: %v",
-					rf.me, rf.votedFor, rf.currentTerm)
-			}
+			// The earlier implementation checks the votedFor field and only becomes
+			// candidate if the replica hasn't voted. This will prevent electing a
+			// new leader in the following scenario.
+			// - A becomes leader, B and C both vote for A.
+			// - A becomes disconnected. B and C times out while waiting for
+			//   heartbeat, but this condition prevents them from starting to request
+			//   vote.
+			// if rf.votedFor == -1 {
+		  DPrintf("%v: in follower state, timed out, becomes candidate", rf.me)
+			rf.state = Candidate
 			rf.mu.Unlock()
+			return
 		}
 		// DPrintf("%v: in follower state loop", rf.me)
 		// TODO: change to a const variable
@@ -506,7 +506,8 @@ func (rf *Raft) CandidateState() {
 }
 
 func (rf *Raft) LeaderState() {
-	timeout := 150 * time.Millisecond
+	// Tester limits you to 10 heartbeats per second.
+	timeout := 120 * time.Millisecond
 	// Set an old time to guarantee the first heartbeat
 	lastStartHeartbeatTime := time.Now().Add(-2 * timeout)
 	for rf.getState() == Leader {
