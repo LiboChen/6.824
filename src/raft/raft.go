@@ -77,6 +77,7 @@ type Raft struct {
 	lastLogTerm  int
 
 	state State
+
 	// Number of votes get.
 	numVotes          int
 	startFollowerTime time.Time
@@ -135,8 +136,9 @@ func (rf *Raft) readPersist(data []byte) {
 	// }
 }
 
+// =============================== RequestVote =================================
 //
-// example RequestVote RPC arguments structure.
+// RequestVote RPC arguments structure.
 // field names must start with capital letters!
 //
 type RequestVoteArgs struct {
@@ -159,7 +161,7 @@ type RequestVoteReply struct {
 	VoteGranted bool
 }
 
-// example RequestVote RPC handler.
+// RequestVote RPC handler.
 func (rf *Raft) RequestVote(args *RequestVoteArgs, reply *RequestVoteReply) {
 	// Your code here (2A, 2B).
 
@@ -185,7 +187,7 @@ func (rf *Raft) RequestVote(args *RequestVoteArgs, reply *RequestVoteReply) {
 		}
 	} else if args.Term > rf.currentTerm { // Update current term
 		// In this case, we still allow to grant vote, regardless of whether
-		// it has granted to itself. The ratio is that we are granting a vote
+		// it has granted to itself. The rationale is that we are granting a vote
 		// in a new term. This is to fix an interesting split vote as observed
 		// in split_vote.example.
 		DPrintf("%v(term %v) becomes follower, higher term %v from RequestVote",
@@ -233,153 +235,6 @@ func (rf *Raft) RequestVote(args *RequestVoteArgs, reply *RequestVoteReply) {
 func (rf *Raft) sendRequestVote(server int, args *RequestVoteArgs, reply *RequestVoteReply) bool {
 	ok := rf.peers[server].Call("Raft.RequestVote", args, reply)
 	return ok
-}
-
-type AppendEntriesArgs struct {
-	// For 2A
-	Term     int
-	LeaderId int
-}
-
-type AppendEntriesReply struct {
-	// For 2A
-	Term int
-}
-
-func (rf *Raft) AppendEntries(args *AppendEntriesArgs, reply *AppendEntriesReply) {
-	// For 2A
-	// DPrintf("%v received AppendEntries, args.Term: %v, my term: %v",
-	// 	rf.me, args.Term, rf.currentTerm)
-	rf.mu.Lock()
-	defer rf.mu.Unlock()
-	// Discover higer terms. Switch to follower state from leader or candidate.
-	// For leader, shall we use > instead of >=
-	// DPrintf("%v AppendEntries acquired lock, args.Term: %v, my term: %v",
-	//	rf.me, args.Term, rf.currentTerm)
-	// A universal rule for all RPC reqs and resp
-	if args.Term >= rf.currentTerm {
-		DPrintf("%v(term %v) becomes/stays follower, term %v from AppendEntries",
-			rf.me, rf.currentTerm, args.Term)
-		rf.currentTerm = args.Term
-		// we reply on this bit in follower state loop.
-		rf.votedFor = -1
-		rf.state = Follower
-		// We should update the follower time in case it's already in the follower
-		// state loop.
-		rf.startFollowerTime = time.Now()
-	}
-
-	// This is for leader to update itself if currentTerm is larger than Term.
-	reply.Term = rf.currentTerm
-	return
-}
-
-func (rf *Raft) sendAppendEntries(server int, args *AppendEntriesArgs, reply *AppendEntriesReply) bool {
-	ok := rf.peers[server].Call("Raft.AppendEntries", args, reply)
-	return ok
-}
-
-//
-// the service using Raft (e.g. a k/v server) wants to start
-// agreement on the next command to be appended to Raft's log. if this
-// server isn't the leader, returns false. otherwise start the
-// agreement and return immediately. there is no guarantee that this
-// command will ever be committed to the Raft log, since the leader
-// may fail or lose an election. even if the Raft instance has been killed,
-// this function should return gracefully.
-//
-// the first return value is the index that the command will appear at
-// if it's ever committed. the second return value is the current
-// term. the third return value is true if this server believes it is
-// the leader.
-//
-func (rf *Raft) Start(command interface{}) (int, int, bool) {
-	index := -1
-	term := -1
-	isLeader := true
-
-	// Your code here (2B).
-
-	return index, term, isLeader
-}
-
-//
-// the tester doesn't halt goroutines created by Raft after each test,
-// but it does call the Kill() method. your code can use killed() to
-// check whether Kill() has been called. the use of atomic avoids the
-// need for a lock.
-//
-// the issue is that long-running goroutines use memory and may chew
-// up CPU time, perhaps causing later tests to fail and generating
-// confusing debug output. any goroutine with a long-running loop
-// should call killed() to check whether it should stop.
-//
-func (rf *Raft) Kill() {
-	atomic.StoreInt32(&rf.dead, 1)
-	// Your code here, if desired.
-}
-
-func (rf *Raft) killed() bool {
-	z := atomic.LoadInt32(&rf.dead)
-	return z == 1
-}
-
-func (rf *Raft) getState() State {
-	rf.mu.Lock()
-	defer rf.mu.Unlock()
-	return rf.state
-}
-
-func (rf *Raft) getStartFollowerTime() time.Time {
-	rf.mu.Lock()
-	defer rf.mu.Unlock()
-	return rf.startFollowerTime
-}
-
-func (rf *Raft) setStartFollowerTime(t time.Time) {
-	rf.mu.Lock()
-	defer rf.mu.Unlock()
-	rf.startFollowerTime = t
-}
-
-func (rf *Raft) FollowerState() {
-	// Use 300 - 500 ms
-	timeout := time.Duration(generateRand(100, 400)) * time.Millisecond
-	rf.setStartFollowerTime(time.Now())
-	// If election timeout elapses without receiving AppendEntries
-	// RPC from current leader or granting vote to candidate: convert to candidate
-	//
-	// Check state in case it changes. We use shared state + lock to do
-	// communication between goroutines.
-	DPrintf("%v: went into follower state function with timeout %v", rf.me, timeout)
-	for rf.getState() == Follower {
-		// Time out
-		if time.Now().Sub(rf.getStartFollowerTime()) > timeout {
-			rf.mu.Lock()
-			// It's very tricky that this will lead to deadlock, because
-			// defer only executes when the function returns. while getState()
-			// also needs the lock. It's not like C++ scoped_ptr.
-			// defer rf.mu.Unlock()
-			//
-			// Instead explicitly unlock below.
-			//
-			// We reply on this value to see if it has granted vote to candidate.
-			if rf.votedFor == -1 {
-				// DPrintf("%v: in follower state, time out, become candidate", rf.me)
-				rf.state = Candidate
-				rf.mu.Unlock()
-				return
-			} else {
-				DPrintf("%v can not become leader, votedFor: %v, term: %v",
-					rf.me, rf.votedFor, rf.currentTerm)
-			}
-			rf.mu.Unlock()
-		}
-		// DPrintf("%v: in follower state loop", rf.me)
-		// TODO: change to a const variable
-		// Sleep for 5 Milliseconds
-		time.Sleep(5 * time.Millisecond)
-	}
 }
 
 // Sends RequestVote and processes the response.
@@ -448,23 +303,50 @@ func (rf *Raft) startRequestVote() {
 	// DPrintf("%v finishes startRequestVote", rf.me)
 }
 
-func (rf *Raft) CandidateState() {
-	timeout := time.Duration(generateRand(400, 500)) * time.Millisecond
-	// Set a time which is old enough to start a new election immediately.
-	// The semantics here is that candidate is able to start new election now.
-	// In follower, we will add some timeout as well.
-	lastStartNewElectionTime := time.Now().Add(-2 * timeout)
-	// lastStartNewElectionTime := time.Now()
-	for rf.getState() == Candidate {
-		// Check if we should start a new election
-		if time.Now().Sub(lastStartNewElectionTime) > timeout {
-			rf.startRequestVote()
-			lastStartNewElectionTime = time.Now()
-			timeout = time.Duration(generateRand(400, 500)) * time.Millisecond
-		}
-		// TODO: tune timeout
-		time.Sleep(5 * time.Millisecond)
+// =============================== AppendEntries ==============================
+
+type AppendEntriesArgs struct {
+	// For 2A
+	Term     int
+	LeaderId int
+}
+
+type AppendEntriesReply struct {
+	// For 2A
+	Term int
+}
+
+func (rf *Raft) AppendEntries(args *AppendEntriesArgs, reply *AppendEntriesReply) {
+	// For 2A
+	// DPrintf("%v received AppendEntries, args.Term: %v, my term: %v",
+	// 	rf.me, args.Term, rf.currentTerm)
+	rf.mu.Lock()
+	defer rf.mu.Unlock()
+	// Discover higer terms. Switch to follower state from leader or candidate.
+	// For leader, shall we use > instead of >=
+	// DPrintf("%v AppendEntries acquired lock, args.Term: %v, my term: %v",
+	//	rf.me, args.Term, rf.currentTerm)
+	// A universal rule for all RPC reqs and resp
+	if args.Term >= rf.currentTerm {
+		DPrintf("%v(term %v) becomes/stays follower, term %v from AppendEntries",
+			rf.me, rf.currentTerm, args.Term)
+		rf.currentTerm = args.Term
+		// we reply on this bit in follower state loop.
+		rf.votedFor = -1
+		rf.state = Follower
+		// We should update the follower time in case it's already in the follower
+		// state loop.
+		rf.startFollowerTime = time.Now()
 	}
+
+	// This is for leader to update itself if currentTerm is larger than Term.
+	reply.Term = rf.currentTerm
+	return
+}
+
+func (rf *Raft) sendAppendEntries(server int, args *AppendEntriesArgs, reply *AppendEntriesReply) bool {
+	ok := rf.peers[server].Call("Raft.AppendEntries", args, reply)
+	return ok
 }
 
 func (rf *Raft) sendHeartBeat(server int, args *AppendEntriesArgs) {
@@ -474,9 +356,6 @@ func (rf *Raft) sendHeartBeat(server int, args *AppendEntriesArgs) {
 		rf.mu.Lock()
 		defer rf.mu.Unlock()
 		if reply.Term > rf.currentTerm {
-			// TODO: shall we update currentTerm to Term?
-			// sendHeartBeat is sent from leader state. But when receiving the response,
-			// it may not be in leader state any more.
 			if rf.state != Follower {
 				DPrintf("%v becomes follower, higer term from AppendEntries resp", rf.me)
 				rf.state = Follower
@@ -503,8 +382,130 @@ func (rf *Raft) startHeartBeat() {
 	}
 }
 
+//
+// the service using Raft (e.g. a k/v server) wants to start
+// agreement on the next command to be appended to Raft's log. if this
+// server isn't the leader, returns false. otherwise start the
+// agreement and return immediately. there is no guarantee that this
+// command will ever be committed to the Raft log, since the leader
+// may fail or lose an election. even if the Raft instance has been killed,
+// this function should return gracefully.
+//
+// the first return value is the index that the command will appear at
+// if it's ever committed. the second return value is the current
+// term. the third return value is true if this server believes it is
+// the leader.
+//
+func (rf *Raft) Start(command interface{}) (int, int, bool) {
+	index := -1
+	term := -1
+	isLeader := true
+
+	// Your code here (2B).
+
+	return index, term, isLeader
+}
+
+//
+// the tester doesn't halt goroutines created by Raft after each test,
+// but it does call the Kill() method. your code can use killed() to
+// check whether Kill() has been called. the use of atomic avoids the
+// need for a lock.
+//
+// the issue is that long-running goroutines use memory and may chew
+// up CPU time, perhaps causing later tests to fail and generating
+// confusing debug output. any goroutine with a long-running loop
+// should call killed() to check whether it should stop.
+//
+func (rf *Raft) Kill() {
+	atomic.StoreInt32(&rf.dead, 1)
+	// Your code here, if desired.
+}
+
+func (rf *Raft) killed() bool {
+	z := atomic.LoadInt32(&rf.dead)
+	return z == 1
+}
+
+func (rf *Raft) getState() State {
+	rf.mu.Lock()
+	defer rf.mu.Unlock()
+	return rf.state
+}
+
+func (rf *Raft) getStartFollowerTime() time.Time {
+	rf.mu.Lock()
+	defer rf.mu.Unlock()
+	return rf.startFollowerTime
+}
+
+func (rf *Raft) setStartFollowerTime(t time.Time) {
+	rf.mu.Lock()
+	defer rf.mu.Unlock()
+	rf.startFollowerTime = t
+}
+
+// ============================ State machines =================================
+
+func (rf *Raft) FollowerState() {
+	// Use 300 - 500 ms
+	timeout := time.Duration(generateRand(100, 400)) * time.Millisecond
+	rf.setStartFollowerTime(time.Now())
+	// If election timeout elapses without receiving AppendEntries
+	// RPC from current leader or granting vote to candidate: convert to candidate
+	//
+	// Check state in case it changes. We use shared state + lock to do
+	// communication between goroutines.
+	DPrintf("%v: went into follower state function with timeout %v", rf.me, timeout)
+	for rf.getState() == Follower {
+		// Time out
+		if time.Now().Sub(rf.getStartFollowerTime()) > timeout {
+			rf.mu.Lock()
+			// It's very tricky that this will lead to deadlock, because
+			// defer only executes when the function returns. while getState()
+			// also needs the lock. It's not like C++ scoped_ptr.
+			// defer rf.mu.Unlock()
+			//
+			// Instead explicitly unlock below.
+			//
+			// We reply on this value to see if it has granted vote to candidate.
+			if rf.votedFor == -1 {
+				// DPrintf("%v: in follower state, time out, become candidate", rf.me)
+				rf.state = Candidate
+				rf.mu.Unlock()
+				return
+			} else {
+				DPrintf("%v can not become leader, votedFor: %v, term: %v",
+					rf.me, rf.votedFor, rf.currentTerm)
+			}
+			rf.mu.Unlock()
+		}
+		// DPrintf("%v: in follower state loop", rf.me)
+		// TODO: change to a const variable
+		// Sleep for 5 Milliseconds
+		time.Sleep(5 * time.Millisecond)
+	}
+}
+
+func (rf *Raft) CandidateState() {
+	timeout := time.Duration(generateRand(400, 500)) * time.Millisecond
+	// Set a time which is old enough to start a new election immediately.
+	// The semantics here is that candidate is able to start new election now.
+	// In follower, we will add some timeout as well.
+	lastStartNewElectionTime := time.Now().Add(-2 * timeout)
+	for rf.getState() == Candidate {
+		// Check if we should start a new election
+		if time.Now().Sub(lastStartNewElectionTime) > timeout {
+			rf.startRequestVote()
+			lastStartNewElectionTime = time.Now()
+			timeout = time.Duration(generateRand(400, 500)) * time.Millisecond
+		}
+		// TODO: tune timeout
+		time.Sleep(5 * time.Millisecond)
+	}
+}
+
 func (rf *Raft) LeaderState() {
-	// TODO: tune
 	timeout := 150 * time.Millisecond
 	// Set an old time to guarantee the first heartbeat
 	lastStartHeartbeatTime := time.Now().Add(-2 * timeout)
