@@ -174,7 +174,9 @@ func TestFailAgree2B(t *testing.T) {
 	cfg.one(105, servers-1, false)
 
 	// re-connect
+	DPrintf("reconnect %v", (leader + 1) % servers)
 	cfg.connect((leader + 1) % servers)
+	DPrintf("reconnected %v", (leader + 1) % servers)
 
 	// the full set of servers should preserve
 	// previous agreements, and be able to agree
@@ -200,6 +202,7 @@ func TestFailNoAgree2B(t *testing.T) {
 	cfg.disconnect((leader + 1) % servers)
 	cfg.disconnect((leader + 2) % servers)
 	cfg.disconnect((leader + 3) % servers)
+	DPrintf("leader 1 is %v", leader)
 
 	index, _, ok := cfg.rafts[leader].Start(20)
 	if ok != true {
@@ -224,6 +227,7 @@ func TestFailNoAgree2B(t *testing.T) {
 	// the disconnected majority may have chosen a leader from
 	// among their own ranks, forgetting index 2.
 	leader2 := cfg.checkOneLeader()
+	DPrintf("leader 2 is %v", leader2)
 	index2, _, ok2 := cfg.rafts[leader2].Start(30)
 	if ok2 == false {
 		t.Fatalf("leader2 rejected Start()")
